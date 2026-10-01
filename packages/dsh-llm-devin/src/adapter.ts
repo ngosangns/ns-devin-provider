@@ -25,7 +25,6 @@ import {
   streamDevin,
   updateDevinModelsCache,
 } from "ns-devin-core";
-import { isDevinCatalogModel } from "./catalog.js";
 import { toLlmError } from "./errors.js";
 import { toDevinMessages } from "./messages.js";
 
@@ -87,11 +86,6 @@ export class DevinAdapter extends LlmAdapter {
     return { id: provider, name: this.options.displayName };
   }
 
-  /** This route only. A foreign catalog id is not this adapter's model. */
-  private owns(provider: string, modelId: string): boolean {
-    return provider === this.options.provider && isDevinCatalogModel(modelId);
-  }
-
   private refreshPromise: Promise<void> | undefined;
 
   /**
@@ -119,22 +113,18 @@ export class DevinAdapter extends LlmAdapter {
 
   async listModels(provider: string): Promise<readonly LlmModelInfo[]> {
     await this.refreshCatalog();
-    return getCachedModels()
-      .filter((model) => this.owns(provider, model.id))
-      .map((model) => ({
-        provider,
-        id: model.id,
-        name: model.name,
-        inputModalities: model.input.filter((modality) => modality === "text" || modality === "image"),
-      }));
+    return getCachedModels().map((model) => ({
+      provider,
+      id: model.id,
+      name: model.name,
+      inputModalities: model.input.filter((modality) => modality === "text" || modality === "image"),
+    }));
   }
 
   async resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo> {
     await this.refreshCatalog();
     const known = getCachedModels().find((candidate) => candidate.id === model);
-    if (!known || !this.owns(provider, known.id)) {
-      throw new LlmError(`Unknown ${this.providerInfo(provider).name} model: ${model}`, "UNKNOWN_MODEL");
-    }
+    if (!known) throw new LlmError(`Unknown Devin model: ${model}`, "UNKNOWN_MODEL");
     return {
       provider,
       id: known.id,
@@ -169,12 +159,7 @@ export class DevinAdapter extends LlmAdapter {
   private async *streamInner(options: GenerateOptions): AsyncIterable<StreamChunk> {
     const credentials = await this.options.credentials();
     const model = getCachedModels().find((candidate) => candidate.id === options.model);
-    if (!model || !this.owns(options.provider, model.id)) {
-      throw new LlmError(
-        `Unknown ${this.providerInfo(options.provider).name} model: ${options.model}`,
-        "UNKNOWN_MODEL",
-      );
-    }
+    if (!model) throw new LlmError(`Unknown Devin model: ${options.model}`, "UNKNOWN_MODEL");
 
     const projected = await toDevinMessages(options.messages, {
       attachments: this.options.attachments?.(),
