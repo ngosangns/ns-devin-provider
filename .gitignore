@@ -1,5 +1,37 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
+build/
+out/
+*.tsbuildinfo
 *.tgz
-.DS_Store
+
+# Test / coverage
+coverage/
+*.lcov
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+
+# Logs
 *.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Cache
+.cache/
+.turbo/
+.eslintcache
