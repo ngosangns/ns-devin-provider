@@ -1,0 +1,29 @@
+{
+  "name": "ns-devin-provider",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ngosangns/ns-devin-provider.git"
+  },
+  "scripts": {
+    "build": "pnpm -r --filter './packages/**' build",
+    "check": "pnpm -r --filter './packages/**' check",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.14",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@11.23.0"
+}
