@@ -25,6 +25,7 @@ import {
   streamDevin,
   updateDevinModelsCache,
 } from "ns-devin-core";
+import { modelBelongsToProvider } from "./catalog.js";
 import { toLlmError } from "./errors.js";
 import { toDevinMessages } from "./messages.js";
 
@@ -34,6 +35,13 @@ export interface DevinAdapterOptions {
   provider: string;
   /** Human-readable provider name for selectors and diagnostics. */
   displayName: string;
+  /**
+   * Picker route for Grok catalog ids. Empty, or equal to {@link provider},
+   * keeps those models on the Devin route.
+   */
+  grokProvider: string;
+  /** Human-readable name for the Grok route. */
+  grokDisplayName: string;
   /** Resolve the current session; called once per request. */
   credentials: () => Promise<DevinCredentials>;
   /** Optional durable attachment service, resolved at request time. */
@@ -83,7 +91,14 @@ export class DevinAdapter extends LlmAdapter {
   }
 
   providerInfo(provider: string): LlmProviderInfo {
+    if (provider === this.options.grokProvider && provider !== this.options.provider) {
+      return { id: provider, name: this.options.grokDisplayName };
+    }
     return { id: provider, name: this.options.displayName };
+  }
+
+  private owns(provider: string, modelId: string): boolean {
+    return modelBelongsToProvider(modelId, provider, this.options.provider, this.options.grokProvider);
   }
 
   private refreshPromise: Promise<void> | undefined;
@@ -113,18 +128,22 @@ export class DevinAdapter extends LlmAdapter {
 
   async listModels(provider: string): Promise<readonly LlmModelInfo[]> {
     await this.refreshCatalog();
-    return getCachedModels().map((model) => ({
-      provider,
-      id: model.id,
-      name: model.name,
-      inputModalities: model.input.filter((modality) => modality === "text" || modality === "image"),
-    }));
+    return getCachedModels()
+      .filter((model) => this.owns(provider, model.id))
+      .map((model) => ({
+        provider,
+        id: model.id,
+        name: model.name,
+        inputModalities: model.input.filter((modality) => modality === "text" || modality === "image"),
+      }));
   }
 
   async resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo> {
     await this.refreshCatalog();
     const known = getCachedModels().find((candidate) => candidate.id === model);
-    if (!known) throw new LlmError(`Unknown Devin model: ${model}`, "UNKNOWN_MODEL");
+    if (!known || !this.owns(provider, known.id)) {
+      throw new LlmError(`Unknown ${this.providerInfo(provider).name} model: ${model}`, "UNKNOWN_MODEL");
+    }
     return {
       provider,
       id: known.id,
@@ -152,14 +171,19 @@ export class DevinAdapter extends LlmAdapter {
       // `LlmRuntime.stream()` normalizes a throw into a terminal finish, but only
       // after this generator has surfaced it. Converting here is what gives the
       // loop a routing code instead of Devin's raw wording.
-      throw toLlmError(error);
+      throw toLlmError(error, this.providerInfo(options.provider).name);
     }
   }
 
   private async *streamInner(options: GenerateOptions): AsyncIterable<StreamChunk> {
     const credentials = await this.options.credentials();
     const model = getCachedModels().find((candidate) => candidate.id === options.model);
-    if (!model) throw new LlmError(`Unknown Devin model: ${options.model}`, "UNKNOWN_MODEL");
+    if (!model || !this.owns(options.provider, model.id)) {
+      throw new LlmError(
+        `Unknown ${this.providerInfo(options.provider).name} model: ${options.model}`,
+        "UNKNOWN_MODEL",
+      );
+    }
 
     const projected = await toDevinMessages(options.messages, {
       attachments: this.options.attachments?.(),

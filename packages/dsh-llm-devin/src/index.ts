@@ -9,6 +9,10 @@
  * `~/.local/share/devin/credentials.toml`, which this plugin reads per request
  * so a CLI token rotation is picked up without a restart.
  *
+ * Grok models in that catalog are registered on their own route so the picker
+ * does not file them under Devin. Set `grokProvider` to `""` to keep the old
+ * single list.
+ *
  * ```yaml
  * - id: llm-devin
  *   name: 'dsh-llm-devin'
@@ -51,11 +55,22 @@ export interface Config {
   provider: string;
   /** Display name for selectors and status labels. */
   displayName: string;
+  /**
+   * Provider route for Grok catalog ids. Empty keeps them on {@link provider}.
+   */
+  grokProvider: string;
+  /** Display name for the Grok route. */
+  grokDisplayName: string;
 }
 
 export const Config: z<Config> = z.object({
   provider: z.string().default("devin").description("Provider route to register the adapter under."),
   displayName: z.string().default("Devin").description("Display name shown in model selectors."),
+  grokProvider: z
+    .string()
+    .default("grok")
+    .description("Provider route for Grok models. Empty leaves them on the Devin route."),
+  grokDisplayName: z.string().default("Grok").description("Display name for the Grok route."),
 });
 
 /**
@@ -97,9 +112,15 @@ export function apply(ctx: Context, config: Config): void {
   const adapter = new DevinAdapter({
     provider: config.provider,
     displayName: config.displayName,
+    grokProvider: config.grokProvider,
+    grokDisplayName: config.grokDisplayName,
     credentials: currentCredentials,
     attachments: () => attachments,
   });
 
-  ctx.llm.registerAdapter([config.provider], adapter);
+  const routes =
+    config.grokProvider.length > 0 && config.grokProvider !== config.provider
+      ? [config.provider, config.grokProvider]
+      : [config.provider];
+  ctx.llm.registerAdapter(routes, adapter);
 }

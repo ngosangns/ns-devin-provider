@@ -26,4 +26,17 @@ describe("toLlmError", () => {
     expect(toLlmError(abort).code).toBe("ABORTED");
     expect(toLlmError(new Error("No Devin session found")).code).toBe("AUTH");
   });
+
+  it("labels a Grok-route failure with Grok and keeps the server sentence", () => {
+    const quota = new DevinStreamError(
+      "Devin stream error failed_precondition: Your weekly usage quota has been exhausted. Visit https://app.devin.ai/settings/usage",
+      "failed_precondition",
+    );
+    const error = toLlmError(quota, "Grok");
+    expect(error.code).toBe("RATE_LIMIT");
+    expect(error.message).toBe(
+      "Grok stream error failed_precondition: Your weekly usage quota has been exhausted. Visit https://app.devin.ai/settings/usage",
+    );
+    expect(toLlmError(quota).message.startsWith("Devin stream error")).toBe(true);
+  });
 });
