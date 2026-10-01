@@ -60,6 +60,8 @@ export interface DevinTool {
   name: string;
   description: string;
   parameters: Record<string, unknown>;
+  /** Provider-enforced strict schema conformance, when the host exposes it. */
+  strict?: boolean;
 }
 
 export interface DevinCost {
@@ -78,6 +80,8 @@ export interface DevinModelSpec {
   /** Local id used for selection and cost attribution — also the Cascade wire uid. */
   id: string;
   name: string;
+  /** Wire uid when it differs from {@link id} — e.g. a collapsed family's default member uid. */
+  requestModelId?: string;
   reasoning: boolean;
   /** Selectable efforts, least to most intensive. Absent means no effort control. */
   efforts?: readonly DevinEffort[];
@@ -89,9 +93,18 @@ export interface DevinModelSpec {
   maxTokens: number;
   /** Wire uid Cascade uses to resolve a server-side router (`AssignModel`) rather than chat directly. */
   isModelRouter?: boolean;
+  /** Whether the model accepts tool definitions; absent/true means tools are available. */
+  supportsTools?: boolean;
   supportsParallelToolCalls?: boolean;
   /** Cascade API base URL this model is served from. */
   baseUrl?: string;
+  /** Presentation metadata the server already ships, kept sparse. */
+  description?: string;
+  isNew?: boolean;
+  isBeta?: boolean;
+  isRecommended?: boolean;
+  /** Effort the native client selects for the family when none is given. */
+  defaultEffort?: DevinEffort;
 }
 
 export interface DevinUsage {
@@ -127,6 +140,10 @@ export type DevinStreamEvent =
       type: "done";
       stopReason: "stop" | "toolUse" | "length";
       errorMessage?: string;
+      /** Devin's own message id for this turn; a reply can reference it. */
+      responseId?: string;
+      /** Concrete uid a router landed on, when it differs from the request's. */
+      upstreamModel?: string;
     };
 
 /**

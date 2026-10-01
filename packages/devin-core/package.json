@@ -1,0 +1,32 @@
+{
+  "name": "ns-devin-core",
+  "version": "0.1.0",
+  "description": "Shared Devin (Cognition Cascade) protocol core — credentials, model discovery, Connect streaming; a dependency, not for direct install",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ngosangns/ns-devin-provider.git",
+    "directory": "packages/devin-core"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "prepublishOnly": "pnpm run check && pnpm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.4"
+  }
+}

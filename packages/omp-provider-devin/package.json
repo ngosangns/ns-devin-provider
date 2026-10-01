@@ -1,0 +1,64 @@
+{
+  "name": "ns-omp-provider-devin",
+  "version": "0.1.0",
+  "description": "OMP (oh-my-pi) provider plugin: adds Devin (Cognition Cascade) models via your devin CLI login",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ngosangns/ns-devin-provider.git",
+    "directory": "packages/omp-provider-devin"
+  },
+  "keywords": [
+    "omp",
+    "omp-plugin",
+    "oh-my-pi",
+    "pi",
+    "devin",
+    "cognition",
+    "cascade",
+    "ai",
+    "provider"
+  ],
+  "omp": {
+    "extensions": [
+      "./dist/index.js"
+    ]
+  },
+  "pi": {
+    "extensions": [
+      "./dist/index.js"
+    ]
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/index.js --banner:js=\"import{createRequire as __devinCreateRequire}from'node:module';const require=__devinCreateRequire(import.meta.url);\" --external:@oh-my-pi/pi-ai --external:@oh-my-pi/pi-catalog --external:@oh-my-pi/pi-coding-agent --external:@oh-my-pi/pi-tui && tsc -p tsconfig.json --emitDeclarationOnly",
+    "check": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "prepublishOnly": "pnpm run check && pnpm run build"
+  },
+  "dependencies": {
+    "ns-devin-core": "workspace:*"
+  },
+  "peerDependencies": {
+    "@oh-my-pi/pi-ai": ">=18.2.0",
+    "@oh-my-pi/pi-coding-agent": ">=18.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@oh-my-pi/pi-ai": {
+      "optional": true
+    },
+    "@oh-my-pi/pi-coding-agent": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@oh-my-pi/pi-ai": "18.2.7",
+    "@oh-my-pi/pi-coding-agent": "18.2.7",
+    "@types/node": "^22.20.4"
+  }
+}

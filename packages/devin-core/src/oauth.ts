@@ -2,7 +2,7 @@
 // ABOUTME: Devin CLI tokens do not expire by default, so there is no token refresh endpoint to call.
 
 import { createHash, randomBytes } from "node:crypto";
-import { DEVIN_WEBAPP_URL, DEVIN_MANAGEMENT_BASE_URL } from "./wire.js";
+import { DEVIN_MANAGEMENT_BASE_URL, DEVIN_WEBAPP_URL } from "./wire.js";
 
 export type DevinAuthMethod = "oauth" | "apikey";
 
@@ -121,7 +121,10 @@ export async function loginDevinWithPkce(callbacks: DevinLoginCallbacks): Promis
         code_challenge: pkce.challenge,
         code_challenge_method: "S256",
       });
-      callbacks.onAuthUrl(`${DEVIN_WEBAPP_URL}/auth/cli/continue?${params.toString()}`, "Sign in to Devin in your browser.");
+      callbacks.onAuthUrl(
+        `${DEVIN_WEBAPP_URL}/auth/cli/continue?${params.toString()}`,
+        "Sign in to Devin in your browser.",
+      );
     });
   });
 
