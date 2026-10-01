@@ -20,11 +20,9 @@ on:
 
 jobs:
   publish:
-    runs-on: [self-hosted, macmini]
+    runs-on: ubuntu-latest
     permissions:
       # Required for OIDC: this is what npm trusts in place of a token.
-      # (Provenance attestation is not available — sigstore only accepts
-      # github-hosted runners, and this job runs on the self-hosted macmini.)
       id-token: write
       contents: read
     steps:
