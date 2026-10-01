@@ -25,7 +25,7 @@ import {
   streamDevin,
   updateDevinModelsCache,
 } from "ns-devin-core";
-import { modelBelongsToProvider } from "./catalog.js";
+import { isDevinCatalogModel } from "./catalog.js";
 import { toLlmError } from "./errors.js";
 import { toDevinMessages } from "./messages.js";
 
@@ -35,13 +35,6 @@ export interface DevinAdapterOptions {
   provider: string;
   /** Human-readable provider name for selectors and diagnostics. */
   displayName: string;
-  /**
-   * Picker route for Grok catalog ids. Empty, or equal to {@link provider},
-   * keeps those models on the Devin route.
-   */
-  grokProvider: string;
-  /** Human-readable name for the Grok route. */
-  grokDisplayName: string;
   /** Resolve the current session; called once per request. */
   credentials: () => Promise<DevinCredentials>;
   /** Optional durable attachment service, resolved at request time. */
@@ -91,14 +84,12 @@ export class DevinAdapter extends LlmAdapter {
   }
 
   providerInfo(provider: string): LlmProviderInfo {
-    if (provider === this.options.grokProvider && provider !== this.options.provider) {
-      return { id: provider, name: this.options.grokDisplayName };
-    }
     return { id: provider, name: this.options.displayName };
   }
 
+  /** This route only. A foreign catalog id is not this adapter's model. */
   private owns(provider: string, modelId: string): boolean {
-    return modelBelongsToProvider(modelId, provider, this.options.provider, this.options.grokProvider);
+    return provider === this.options.provider && isDevinCatalogModel(modelId);
   }
 
   private refreshPromise: Promise<void> | undefined;
@@ -171,7 +162,7 @@ export class DevinAdapter extends LlmAdapter {
       // `LlmRuntime.stream()` normalizes a throw into a terminal finish, but only
       // after this generator has surfaced it. Converting here is what gives the
       // loop a routing code instead of Devin's raw wording.
-      throw toLlmError(error, this.providerInfo(options.provider).name);
+      throw toLlmError(error);
     }
   }
 

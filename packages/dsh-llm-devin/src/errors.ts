@@ -10,17 +10,6 @@ import {
 } from "ns-devin-core";
 
 /**
- * The core names every transport failure after Devin. A Grok catalog id uses
- * that same transport, but the picker route is Grok, so the harness message
- * follows the route the user selected. The server sentence after the prefix
- * stays intact, including the Devin billing link.
- */
-export function relabelRouteError(message: string, routeName: string): string {
-  if (routeName === "Devin" || routeName.length === 0) return message;
-  return message.replace(/^Devin (?=\S+ error\b)/, () => `${routeName} `);
-}
-
-/**
  * Classify a core failure for the Harness.
  *
  * The core throws Devin errors because it serves two hosts with different
@@ -28,10 +17,10 @@ export function relabelRouteError(message: string, routeName: string): string {
  * the loop branches on `code`, so a mislabelled failure either retries forever
  * or gives up on something transient.
  */
-export function toLlmError(error: unknown, routeName = "Devin"): LlmError {
+export function toLlmError(error: unknown): LlmError {
   if (error instanceof LlmError) return error;
   const cause = error instanceof Error ? error : undefined;
-  const message = relabelRouteError(cause?.message ?? String(error), routeName);
+  const message = cause?.message ?? String(error);
 
   if (cause?.name === "AbortError") return new LlmError(message, "ABORTED", { cause });
 

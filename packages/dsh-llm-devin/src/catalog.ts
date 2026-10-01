@@ -1,31 +1,13 @@
-// ABOUTME: Which picker group a Cascade catalog id belongs to.
-// ABOUTME: Grok is served by the same session as Devin, but it is not a Devin model.
+// ABOUTME: Which Cascade catalog ids this adapter will serve.
+// ABOUTME: Other vendors in the same payload are outside its job.
 
 /**
- * Cascade lists Grok beside SWE and the other families. The id prefix is the
- * stable split: display names change, and effort-lane uids (`grok-4-7-high`)
- * are not catalog ids.
+ * Cascade returns many vendors in one list. This adapter serves Devin's own
+ * entries only. A foreign id is not registered, listed, or turned into an
+ * error class here.
  */
-export function isGrokCatalogModel(id: string): boolean {
-  return id === "grok" || id.startsWith("grok-");
-}
+const OUTSIDE_DEVIN = /^(?:grok$|grok-)/;
 
-/**
- * Whether `modelId` is listed and resolved on `provider`.
- *
- * An empty `grokProvider`, or one equal to the Devin route, leaves every model
- * on the Devin route. Otherwise Grok ids leave the Devin group.
- */
-export function modelBelongsToProvider(
-  modelId: string,
-  provider: string,
-  devinProvider: string,
-  grokProvider: string,
-): boolean {
-  const split = grokProvider.length > 0 && grokProvider !== devinProvider;
-  if (!split) return provider === devinProvider;
-  const grok = isGrokCatalogModel(modelId);
-  if (provider === grokProvider) return grok;
-  if (provider === devinProvider) return !grok;
-  return false;
+export function isDevinCatalogModel(id: string): boolean {
+  return !OUTSIDE_DEVIN.test(id);
 }
