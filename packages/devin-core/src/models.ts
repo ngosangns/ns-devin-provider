@@ -1,7 +1,7 @@
 // ABOUTME: The bootstrap model catalog plus the on-disk cache discovery
 // ABOUTME: refreshes — hosts list models before a session token exists.
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { DevinModelSpec } from "./types.js";
@@ -57,22 +57,30 @@ interface DevinModelCache {
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 let cacheFile: DevinModelCache | undefined;
-let cacheLoaded = false;
+let cacheMtimeMs = -1;
 
+/**
+ * Read the cache file, re-parsing whenever its mtime changed — a long-running
+ * host then picks up a catalog another process fetched, and a stale listing
+ * actually refreshes instead of serving the process-lifetime snapshot.
+ */
 function loadCacheFile(): DevinModelCache | undefined {
-  if (cacheLoaded) return cacheFile;
-  cacheLoaded = true;
   try {
-    const parsed: unknown = JSON.parse(readFileSync(devinModelCachePath(), "utf8"));
-    if (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      Array.isArray((parsed as DevinModelCache).models) &&
-      typeof (parsed as DevinModelCache).fetchedAt === "number"
-    ) {
-      cacheFile = parsed as DevinModelCache;
+    const mtimeMs = statSync(devinModelCachePath()).mtimeMs;
+    if (mtimeMs !== cacheMtimeMs) {
+      cacheMtimeMs = mtimeMs;
+      const parsed: unknown = JSON.parse(readFileSync(devinModelCachePath(), "utf8"));
+      cacheFile =
+        typeof parsed === "object" &&
+        parsed !== null &&
+        Array.isArray((parsed as DevinModelCache).models) &&
+        typeof (parsed as DevinModelCache).fetchedAt === "number"
+          ? (parsed as DevinModelCache)
+          : undefined;
     }
   } catch {
+    // File absent or unparseable: serve the seed and re-try the read next call.
+    cacheMtimeMs = -1;
     cacheFile = undefined;
   }
   return cacheFile;
@@ -96,10 +104,10 @@ export function isCacheStale(now = Date.now()): boolean {
 /** Persist a fetched catalog; returns the list now being served. */
 export function updateDevinModelsCache(models: DevinModelSpec[], now = Date.now()): DevinModelSpec[] {
   cacheFile = { fetchedAt: now, models };
-  cacheLoaded = true;
   try {
     mkdirSync(dirname(devinModelCachePath()), { recursive: true });
     writeFileSync(devinModelCachePath(), JSON.stringify(cacheFile), "utf8");
+    cacheMtimeMs = statSync(devinModelCachePath()).mtimeMs;
   } catch {
     // A read-only home dir must not break the request that fetched this
     // catalog — the in-memory copy still serves this process.
