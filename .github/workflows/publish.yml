@@ -1,6 +1,6 @@
 name: Publish
 
-# Publishes all three packages to npm via trusted publishing (OIDC): no npm
+# Publishes the packages to npm via trusted publishing (OIDC): no npm
 # token is stored anywhere, and no 2FA prompt blocks the run. npm verifies the
 # workflow identity instead, so the trusted publisher registered on npmjs.com
 # must name this repository AND this file (.github/workflows/publish.yml).
