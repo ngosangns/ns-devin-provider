@@ -18,8 +18,12 @@ import {
   type DevinEffort,
   type DevinTool,
   type DevinUsage,
+  fetchDevinModels,
   getCachedModels,
+  isCacheStale,
+  logger,
   streamDevin,
+  updateDevinModelsCache,
 } from "ns-devin-core";
 import { toLlmError } from "./errors.js";
 import { toDevinMessages } from "./messages.js";
@@ -82,7 +86,33 @@ export class DevinAdapter extends LlmAdapter {
     return { id: provider, name: this.options.displayName };
   }
 
+  private refreshPromise: Promise<void> | undefined;
+
+  /**
+   * `GetCliModelConfigs` refreshes the catalog when the disk cache is stale.
+   * A failed refresh leaves the stale (or seed) catalog in place — listing
+   * must never fail just because discovery could not reach the server.
+   */
+  private refreshCatalog(): Promise<void> {
+    this.refreshPromise ??= (async () => {
+      try {
+        if (!isCacheStale()) return;
+        const credentials = await this.options.credentials();
+        const fetched = await fetchDevinModels({ apiKey: credentials.access });
+        if (fetched) updateDevinModelsCache(fetched);
+      } catch (error) {
+        logger.warn("model discovery refresh failed", {
+          message: error instanceof Error ? error.message : String(error),
+        });
+      } finally {
+        this.refreshPromise = undefined;
+      }
+    })();
+    return this.refreshPromise;
+  }
+
   async listModels(provider: string): Promise<readonly LlmModelInfo[]> {
+    await this.refreshCatalog();
     return getCachedModels().map((model) => ({
       provider,
       id: model.id,
@@ -92,6 +122,7 @@ export class DevinAdapter extends LlmAdapter {
   }
 
   async resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo> {
+    await this.refreshCatalog();
     const known = getCachedModels().find((candidate) => candidate.id === model);
     if (!known) throw new LlmError(`Unknown Devin model: ${model}`, "UNKNOWN_MODEL");
     return {
