@@ -1,14 +1,17 @@
+import { gunzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { CONNECT_END_STREAM_FLAG } from "../src/connect.js";
 import { DevinApiError, DevinStreamError } from "../src/errors.js";
 import {
   ChatToolCallSchema,
+  GetChatMessageRequestSchema,
   GetChatMessageResponseSchema,
+  GetUserJwtRequestSchema,
   GetUserJwtResponseSchema,
   ModelUsageStatsSchema,
   StopReason,
 } from "../src/proto/devin-messages.js";
-import { create, toBinary } from "../src/proto/protobuf.js";
+import { create, fromBinary, toBinary } from "../src/proto/protobuf.js";
 import { type DevinStreamRequest, streamDevin } from "../src/stream.js";
 import type { DevinStreamEvent } from "../src/types.js";
 
@@ -134,8 +137,85 @@ describe("streamDevin", () => {
       id: "call_1",
       name: "read",
       arguments: { path: "/a.ts" },
+      argumentsJson: '{"path":"/a.ts"}',
     });
     expect(events.at(-1)).toMatchObject({ type: "done", stopReason: "toolUse" });
+  });
+
+  it("keeps args-only frames (swe-2 style) on the call that opened them", async () => {
+    // swe-2 sends id+name once, then streams field-3-only frames, each in its
+    // own Connect frame; none of them may open a new call.
+    const { impl } = fakeFetch([
+      frame(responseMessage({ deltaToolCalls: [toolCall({ id: "call_1", name: "bash", argumentsJson: "" })] })),
+      frame(responseMessage({ deltaToolCalls: [toolCall({ argumentsJson: '{"command":' })] })),
+      frame(responseMessage({ deltaToolCalls: [toolCall({ argumentsJson: '"ls -la"}' })] })),
+      frame(
+        responseMessage({ deltaToolCalls: [toolCall({ id: "call_2", name: "read", argumentsJson: '{"path":"a"}' })] }),
+      ),
+      frame(responseMessage({ stopReason: StopReason.FUNCTION_CALL })),
+    ]);
+    const events = await collect({}, impl);
+    const starts = events.filter((e) => e.type === "tool_call_start");
+    expect(starts).toEqual([
+      { type: "tool_call_start", index: 0, id: "call_1", name: "bash" },
+      { type: "tool_call_start", index: 1, id: "call_2", name: "read" },
+    ]);
+    const ends = events.filter((e) => e.type === "tool_call_end");
+    expect(ends).toMatchObject([
+      { id: "call_1", name: "bash", arguments: { command: "ls -la" } },
+      { id: "call_2", name: "read", arguments: { path: "a" } },
+    ]);
+    expect(events.at(-1)).toMatchObject({ type: "done", stopReason: "toolUse" });
+  });
+
+  it("never runs truncated tool arguments from the auto-closed preview", async () => {
+    const { impl } = fakeFetch([
+      frame(
+        responseMessage({
+          deltaToolCalls: [toolCall({ id: "call_1", name: "write", argumentsJson: '{"path":"/a.ts","content":"hal' })],
+        }),
+      ),
+    ]);
+    const events = await collect({}, impl);
+    const end = events.find((e) => e.type === "tool_call_end");
+    expect(end).toMatchObject({ argumentsJson: '{"path":"/a.ts","content":"hal' });
+    expect(end && "arguments" in end && end.arguments).toMatchObject({
+      __rawJson: '{"path":"/a.ts","content":"hal',
+    });
+    expect(end && "arguments" in end && end.arguments.path).toBeUndefined();
+  });
+
+  it("retries GetUserJwt with the raw key after a 401 and keeps that form for the turn", async () => {
+    const authKeys: string[] = [];
+    let chatKey: string | undefined;
+    const jwt = toBinary(GetUserJwtResponseSchema, create(GetUserJwtResponseSchema, { userJwt: "jwt-1" }));
+    const impl = (async (input: string | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("GetUserJwt")) {
+        const key = fromBinary(GetUserJwtRequestSchema, init?.body as Uint8Array).metadata?.apiKey ?? "";
+        authKeys.push(key);
+        return key.startsWith("devin-session-token$")
+          ? new Response("unauthenticated", { status: 401 })
+          : new Response(jwt, { status: 200 });
+      }
+      const body = init?.body as Uint8Array;
+      chatKey = fromBinary(GetChatMessageRequestSchema, gunzipSync(body.subarray(5))).metadata?.apiKey;
+      return new Response(streamBody(frame(responseMessage({ deltaText: "ok" }))), { status: 200 });
+    }) as typeof fetch;
+    const events = await collect({ apiKey: "sk-ws-legacy" }, impl);
+    expect(authKeys).toEqual(["devin-session-token$sk-ws-legacy", "sk-ws-legacy"]);
+    expect(chatKey).toBe("sk-ws-legacy");
+    expect(events.at(-1)).toMatchObject({ type: "done", stopReason: "stop" });
+  });
+
+  it("does not retry a 401 for a key already in session-token form", async () => {
+    let authCalls = 0;
+    const impl = (async (input: string | URL) => {
+      if (String(input).endsWith("GetUserJwt")) authCalls++;
+      return new Response("unauthenticated", { status: 401 });
+    }) as typeof fetch;
+    await expect(collect({ apiKey: "devin-session-token$abc" }, impl)).rejects.toThrow(DevinApiError);
+    expect(authCalls).toBe(1);
   });
 
   it("maps MAX_TOKENS to a length stop", async () => {

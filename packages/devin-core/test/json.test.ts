@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseStreamingJson, parseStreamingJsonThrottled } from "../src/json.js";
+import { parseStreamingJson, parseStreamingJsonThrottled, parseToolCallArguments } from "../src/json.js";
 
 describe("parseStreamingJson", () => {
   it("parses complete JSON", () => {
@@ -30,5 +30,28 @@ describe("parseStreamingJsonThrottled", () => {
     expect(parseStreamingJsonThrottled('{"a":1}', 0, 4)).not.toBeNull();
     expect(parseStreamingJsonThrottled('{"a":12}', 7, 4)).toBeNull();
     expect(parseStreamingJsonThrottled('{"a":12345678}', 7, 4)).not.toBeNull();
+  });
+});
+
+describe("parseToolCallArguments", () => {
+  it("parses complete JSON objects and maps empty input to {}", () => {
+    expect(parseToolCallArguments('{"a":1}')).toEqual({ a: 1 });
+    expect(parseToolCallArguments("")).toEqual({});
+    expect(parseToolCallArguments("   ")).toEqual({});
+  });
+
+  it("returns a diagnostic, never auto-closed keys, for truncated or trailing JSON", () => {
+    expect(parseToolCallArguments('{"path":"/a","content":"x')).toMatchObject({
+      __rawJson: '{"path":"/a","content":"x',
+    });
+    expect(parseToolCallArguments('{"a":1} trailing')).toHaveProperty("__parseError");
+    expect(parseToolCallArguments("[1,2]")).toHaveProperty("__parseError");
+  });
+
+  it("bounds the raw text kept in the diagnostic", () => {
+    const raw = `{"content":"${"x".repeat(2_000)}`;
+    const out = parseToolCallArguments(raw) as { __rawJson: string };
+    expect(out.__rawJson.length).toBeLessThan(600);
+    expect(out.__rawJson).toMatch(/\[truncated \d+ chars\]$/);
   });
 });

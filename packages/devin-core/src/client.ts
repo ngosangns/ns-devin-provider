@@ -1,7 +1,7 @@
 // ABOUTME: Unary Connect RPCs a turn depends on: GetUserJwt (session → user
 // ABOUTME: JWT + optional edge URL) and AssignModel (router uid → concrete uid).
 
-import { createDevinHttpError, DevinProtocolError } from "./errors.js";
+import { createDevinHttpError, DevinApiError, DevinProtocolError } from "./errors.js";
 import {
   AssignModelRequestSchema,
   AssignModelResponseSchema,
@@ -14,7 +14,7 @@ import {
 import { create, toBinary } from "./proto/protobuf.js";
 import { decodeDevinUnaryMessage } from "./proto/wire-helpers.js";
 import type { DevinModelSpec } from "./types.js";
-import { devinCliMetadata } from "./wire.js";
+import { devinCliMetadata, devinWireMetadata } from "./wire.js";
 
 export const DEVIN_AUTH_PATH = "/exa.auth_pb.AuthService/GetUserJwt";
 export const DEVIN_ASSIGN_MODEL_PATH = "/exa.api_server_pb.ApiServerService/AssignModel";
@@ -57,14 +57,43 @@ export async function postDevinUnary<TRequest extends object, TResponse>(
 
 export interface DevinAuthMetadata {
   userJwt: string;
+  /**
+   * The credential exactly as the server accepted it on `GetUserJwt`: the
+   * session-token form (`devin-session-token$…`) for CLI logins, or the raw key
+   * for a legacy Windsurf Enterprise API key. Later calls in the same turn must
+   * carry these bytes, not re-derive them.
+   */
+  apiKey: string;
   /** Edge URL the account is pinned to, when the server supplies one. */
   baseUrl?: string;
 }
 
+async function requestDevinUserJwt(
+  metadata: Record<string, unknown>,
+  baseUrl: string,
+  fetchImpl: FetchImpl,
+  signal: AbortSignal | undefined,
+) {
+  return postDevinUnary(
+    baseUrl,
+    DEVIN_AUTH_PATH,
+    GetUserJwtRequestSchema,
+    GetUserJwtResponseSchema,
+    create(GetUserJwtRequestSchema, { metadata: create(MetadataSchema, metadata) }),
+    fetchImpl,
+    signal,
+    "auth",
+  );
+}
+
 /**
- * Exchange the session token for the per-request user JWT. The JWT rides in
+ * Exchange the credential for the per-request user JWT. The JWT rides in
  * `Metadata.userJwt` on every later call and the response may pin a custom API
  * server — a self-hosted/VPC edge — which the chat call must then use.
+ *
+ * The credential is first sent as a Devin session token (the scheme prefix
+ * added). Legacy Windsurf Enterprise API keys are rejected in that form with a
+ * 401, so a 401 retries once with the raw key before failing.
  */
 export async function fetchDevinAuthMetadata(
   apiKey: string | undefined,
@@ -72,24 +101,29 @@ export async function fetchDevinAuthMetadata(
   fetchImpl: FetchImpl,
   signal: AbortSignal | undefined,
 ): Promise<DevinAuthMetadata> {
-  const request = create(GetUserJwtRequestSchema, {
-    metadata: create(MetadataSchema, devinCliMetadata(apiKey)),
-  });
-  const decoded = await postDevinUnary(
-    baseUrl,
-    DEVIN_AUTH_PATH,
-    GetUserJwtRequestSchema,
-    GetUserJwtResponseSchema,
-    request,
-    fetchImpl,
-    signal,
-    "auth",
-  );
+  const sessionMetadata = devinCliMetadata(apiKey);
+  let wireApiKey = sessionMetadata.apiKey as string;
+  let decoded: Awaited<ReturnType<typeof requestDevinUserJwt>>;
+  try {
+    decoded = await requestDevinUserJwt(sessionMetadata, baseUrl, fetchImpl, signal);
+  } catch (error) {
+    const rawMetadata = devinWireMetadata(apiKey);
+    const rawApiKey = rawMetadata.apiKey as string;
+    if (!(error instanceof DevinApiError) || error.status !== 401 || !rawApiKey || rawApiKey === wireApiKey) {
+      throw error;
+    }
+    decoded = await requestDevinUserJwt(rawMetadata, baseUrl, fetchImpl, signal);
+    wireApiKey = rawApiKey;
+  }
   if (!decoded?.userJwt) {
     throw new DevinProtocolError("Devin auth error: GetUserJwt returned an empty user JWT", "runtime");
   }
   const customBaseUrl = decoded.customApiServerUrl.trim();
-  return { userJwt: decoded.userJwt, ...(customBaseUrl ? { baseUrl: customBaseUrl.replace(/\/+$/, "") } : undefined) };
+  return {
+    userJwt: decoded.userJwt,
+    apiKey: wireApiKey,
+    ...(customBaseUrl ? { baseUrl: customBaseUrl.replace(/\/+$/, "") } : undefined),
+  };
 }
 
 /**
@@ -100,14 +134,15 @@ export async function fetchDevinAuthMetadata(
  */
 export async function assignDevinModel(
   model: DevinModelSpec,
-  turn: { apiKey: string | undefined; cascadeId: string },
+  turn: { apiKey: string; cascadeId: string },
   routerPrompt: ChatMessagePrompt | undefined,
   baseUrl: string,
   fetchImpl: FetchImpl,
   signal: AbortSignal | undefined,
 ): Promise<ModelAssignment> {
   const request = create(AssignModelRequestSchema, {
-    metadata: create(MetadataSchema, devinCliMetadata(turn.apiKey)),
+    // `turn.apiKey` is already in the form GetUserJwt accepted.
+    metadata: create(MetadataSchema, devinWireMetadata(turn.apiKey)),
     modelRouterUid: model.requestModelId ?? model.id,
     cascadeId: turn.cascadeId,
     ...(routerPrompt ? { chatMessagePrompt: routerPrompt } : {}),

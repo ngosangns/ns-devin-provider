@@ -10,7 +10,7 @@ export const DEVIN_MANAGEMENT_BASE_URL = "https://api.devin.ai";
 /** Base host for the Devin web app, used for the OAuth PKCE login page. */
 export const DEVIN_WEBAPP_URL = "https://app.devin.ai";
 
-const DEVIN_SESSION_TOKEN_PREFIX = "devin-session-token$";
+export const DEVIN_SESSION_TOKEN_PREFIX = "devin-session-token$";
 
 /** `Metadata.os` vocabulary; `process.platform` is fixed for the process lifetime. */
 const DEVIN_OS = process.platform === "darwin" ? "darwin" : process.platform === "win32" ? "windows" : "linux";

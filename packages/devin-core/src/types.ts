@@ -133,7 +133,16 @@ export type DevinStreamEvent =
   | { type: "thinking_end"; index: number; thinking: string; signature?: string }
   | { type: "tool_call_start"; index: number; id: string; name: string }
   | { type: "tool_call_delta"; index: number; id: string; argumentsDelta: string }
-  | { type: "tool_call_end"; index: number; id: string; name: string; arguments: Record<string, unknown> }
+  | {
+      type: "tool_call_end";
+      index: number;
+      id: string;
+      name: string;
+      /** Strictly parsed arguments; `{ __parseError, __rawJson }` when the JSON is invalid. */
+      arguments: Record<string, unknown>;
+      /** The raw accumulated argument JSON exactly as the model produced it. */
+      argumentsJson: string;
+    }
   | DevinResetEvent
   | { type: "usage"; usage: DevinUsage }
   | {

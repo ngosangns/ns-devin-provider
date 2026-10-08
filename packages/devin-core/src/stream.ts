@@ -4,7 +4,7 @@
 import { assignDevinModel, DEVIN_CHAT_MESSAGE_PATH, type FetchImpl, fetchDevinAuthMetadata } from "./client.js";
 import { ConnectFrameReader, encodeConnectFrame } from "./connect.js";
 import { createDevinHttpError, DevinProtocolError, DevinStreamError, readConnectTrailerError } from "./errors.js";
-import { parseStreamingJson, parseStreamingJsonThrottled } from "./json.js";
+import { parseStreamingJsonThrottled, parseToolCallArguments } from "./json.js";
 import {
   GetChatMessageRequestSchema,
   GetChatMessageResponseSchema,
@@ -87,7 +87,8 @@ export async function* streamDevin(request: DevinStreamRequest): AsyncIterable<D
   const chatBaseUrl = auth.baseUrl ?? baseUrl;
 
   const turn: DevinTurn = {
-    apiKey: request.apiKey,
+    // The credential form GetUserJwt accepted (session token or legacy raw key).
+    apiKey: auth.apiKey,
     userJwt: auth.userJwt,
     cascadeId: request.conversationId ?? request.sessionId ?? crypto.randomUUID(),
   };
@@ -349,12 +350,17 @@ export async function* streamDevin(request: DevinStreamRequest): AsyncIterable<D
     };
   }
   for (const [id, block] of toolBlocks) {
+    // The final parse is strict: a call whose JSON was cut off or trails text
+    // must not run from the auto-closed streaming preview. `argumentsJson`
+    // keeps the raw text so a host can report the parse error to the model.
+    const argumentsJson = toolPartialJson.get(id) ?? "";
     yield {
       type: "tool_call_end",
       index: block.index,
       id,
       name: block.name,
-      arguments: parseStreamingJson(toolPartialJson.get(id)),
+      arguments: parseToolCallArguments(argumentsJson),
+      argumentsJson,
     };
   }
 

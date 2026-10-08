@@ -22,7 +22,8 @@ const model: DevinModelSpec = {
   maxTokens: 64_000,
 };
 
-const turn = { apiKey: "tok", userJwt: "jwt", cascadeId: "cascade-1" };
+// `turn.apiKey` carries the credential exactly as GetUserJwt accepted it.
+const turn = { apiKey: "devin-session-token$tok", userJwt: "jwt", cascadeId: "cascade-1" };
 
 describe("buildChatMessagePrompts", () => {
   it("maps roles onto USER / SYSTEM / TOOL sources", () => {

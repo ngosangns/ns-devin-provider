@@ -2,6 +2,7 @@
 // ABOUTME: the single RPC the native CLI issues for quota display at startup.
 
 import { DEVIN_GET_USER_STATUS_PATH, type FetchImpl, postDevinUnary } from "./client.js";
+import { DevinApiError } from "./errors.js";
 import {
   BillingStrategy,
   GetUserStatusRequestSchema,
@@ -14,7 +15,7 @@ import {
 } from "./proto/devin-messages.js";
 import { create } from "./proto/protobuf.js";
 import { logger } from "./util.js";
-import { DEVIN_DEFAULT_BASE_URL, devinCliMetadata, normalizeDevinSessionToken } from "./wire.js";
+import { DEVIN_DEFAULT_BASE_URL, DEVIN_SESSION_TOKEN_PREFIX, devinCliMetadata, devinWireMetadata } from "./wire.js";
 
 const MICROS_PER_USD = 1_000_000;
 
@@ -212,7 +213,10 @@ export function buildDevinUsageReport(response: GetUserStatusResponse): DevinPro
 }
 
 export interface DevinUsageFetchOptions {
-  /** Session token; the wire format's `devin-session-token$` prefix is added. */
+  /**
+   * Session token; the wire format's `devin-session-token$` prefix is added.
+   * A raw legacy Windsurf Enterprise key is retried as-is after a 401.
+   */
   apiKey?: string;
   baseUrl?: string;
   signal?: AbortSignal;
@@ -227,20 +231,29 @@ export async function fetchDevinUsage(options: DevinUsageFetchOptions): Promise<
   const token = options.apiKey?.trim();
   if (!token) return null;
   const baseUrl = (options.baseUrl ?? DEVIN_DEFAULT_BASE_URL).replace(/\/+$/, "");
-  try {
-    const request = create(GetUserStatusRequestSchema, {
-      metadata: create(MetadataSchema, devinCliMetadata(normalizeDevinSessionToken(token))),
-    });
-    const decoded = await postDevinUnary(
+  const requestStatus = (metadata: Record<string, unknown>) =>
+    postDevinUnary(
       baseUrl,
       DEVIN_GET_USER_STATUS_PATH,
       GetUserStatusRequestSchema,
       GetUserStatusResponseSchema,
-      request,
+      create(GetUserStatusRequestSchema, { metadata: create(MetadataSchema, metadata) }),
       options.fetch ?? fetch,
       options.signal,
       "user status",
     );
+  try {
+    let decoded: Awaited<ReturnType<typeof requestStatus>>;
+    try {
+      decoded = await requestStatus(devinCliMetadata(token));
+    } catch (error) {
+      // A legacy Windsurf Enterprise API key is rejected in session-token form;
+      // retry once with the raw key, mirroring GetUserJwt.
+      if (!(error instanceof DevinApiError) || error.status !== 401 || token.startsWith(DEVIN_SESSION_TOKEN_PREFIX)) {
+        throw error;
+      }
+      decoded = await requestStatus(devinWireMetadata(token));
+    }
     const report = decoded ? buildDevinUsageReport(decoded) : null;
     if (!report) logger.warn("Devin user status response carried no usable status");
     return report;

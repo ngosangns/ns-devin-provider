@@ -47,8 +47,10 @@ export {
   readConnectTrailerError,
 } from "./errors.js";
 export {
+  INVALID_ARGUMENTS_RAW_LIMIT,
   parseStreamingJson,
   parseStreamingJsonThrottled,
+  parseToolCallArguments,
   STREAMING_JSON_PARSE_MIN_GROWTH,
 } from "./json.js";
 export {
@@ -123,6 +125,7 @@ export {
 export {
   DEVIN_DEFAULT_BASE_URL,
   DEVIN_MANAGEMENT_BASE_URL,
+  DEVIN_SESSION_TOKEN_PREFIX,
   DEVIN_WEBAPP_URL,
   devinCliMetadata,
   devinDiscoveryMetadata,

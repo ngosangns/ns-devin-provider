@@ -23,7 +23,7 @@ import { create } from "./proto/protobuf.js";
 import { isGeminiRoutedModel, normalizeSchemaForGoogle } from "./schema.js";
 import type { DevinEffort, DevinMessage, DevinModelSpec, DevinTool, DevinUserMessage } from "./types.js";
 import { deterministicUuid, normalizeSystemPrompts } from "./util.js";
-import { devinCliMetadata } from "./wire.js";
+import { devinWireMetadata } from "./wire.js";
 
 export const DEVIN_DEFAULT_STOP_PATTERNS = [
   "<|user|>",
@@ -35,7 +35,8 @@ export const DEVIN_DEFAULT_STOP_PATTERNS = [
 
 /** Per-turn wire state shared by `AssignModel` and `GetChatMessage`. */
 export interface DevinTurn {
-  apiKey: string | undefined;
+  /** Credential bytes exactly as `GetUserJwt` accepted them (see `DevinAuthMetadata.apiKey`). */
+  apiKey: string;
   userJwt: string;
   /** Cascade thread id; assignment and chat must agree or the JWT is rejected. */
   cascadeId: string;
@@ -197,7 +198,7 @@ export function buildDevinChatRequest(params: {
     });
   });
   return create(GetChatMessageRequestSchema, {
-    metadata: create(MetadataSchema, devinCliMetadata(turn.apiKey, turn.userJwt)),
+    metadata: create(MetadataSchema, devinWireMetadata(turn.apiKey, turn.userJwt)),
     prompt: normalizeSystemPrompts(params.systemPrompt).join("\n\n"),
     chatMessagePrompts: buildChatMessagePrompts(messages, turn.cascadeId),
     chatModelUid,
