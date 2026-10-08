@@ -55,3 +55,43 @@ describe("toDevinMessages", () => {
     expect(content[2]).toMatchObject({ type: "toolCall", id: "c1", name: "read", arguments: { p: "x" } });
   });
 });
+
+describe("toDevinMessages on the dsh 0.2 message model", () => {
+  it("maps tool-role messages to tool results named after their call", async () => {
+    const out = await toDevinMessages([
+      message({
+        role: "assistant",
+        source: { kind: "model", provider: "devin", model: "swe-2" },
+        content: [{ type: "tool-call", id: "c1", name: "bash", arguments: '{"command":"ls"}' }],
+      } as never),
+      message({
+        role: "tool",
+        source: { kind: "tool", callId: "c1" },
+        toolCallId: "c1",
+        isError: true,
+        content: [{ type: "text", text: "boom" }],
+      } as never),
+    ]);
+    expect(out.messages).toHaveLength(2);
+    expect(out.messages[1]).toEqual({
+      role: "toolResult",
+      toolCallId: "c1",
+      toolName: "bash",
+      content: [{ type: "text", text: "boom" }],
+      isError: true,
+    });
+  });
+
+  it("skips developer tool-change messages instead of sending them as user turns", async () => {
+    const out = await toDevinMessages([
+      message({ role: "user", content: [{ type: "text", text: "hi" }] }),
+      message({ role: "developer", content: [{ type: "tool-addition", toolName: "web_search" }] } as never),
+    ]);
+    expect(out.messages).toEqual([{ role: "user", content: [{ type: "text", text: "hi" }] }]);
+  });
+
+  it("accepts identity-free request inputs", async () => {
+    const out = await toDevinMessages([{ role: "user", content: [{ type: "text", text: "one-shot" }] }]);
+    expect(out.messages).toEqual([{ role: "user", content: [{ type: "text", text: "one-shot" }] }]);
+  });
+});

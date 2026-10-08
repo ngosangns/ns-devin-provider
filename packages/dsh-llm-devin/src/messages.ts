@@ -2,7 +2,7 @@
 // ABOUTME: One direction only — responses travel back as stream events, not messages.
 
 import type { AttachmentStore } from "@deepseek-ai/dsh-attachment";
-import { type ContentBlock, fileHandleText, type Message, type ToolResultBlock } from "@deepseek-ai/dsh-llm";
+import { type ContentBlock, fileHandleText, offloadedImageText, type RequestMessage } from "@deepseek-ai/dsh-llm";
 import type { DevinAssistantContent, DevinMessage, DevinUserContent } from "ns-devin-core";
 
 /**
@@ -14,6 +14,22 @@ import type { DevinAssistantContent, DevinMessage, DevinUserContent } from "ns-d
 export interface MessageProjectionContext {
   attachments?: AttachmentStore;
   signal?: AbortSignal;
+}
+
+/**
+ * The dsh 0.1 shape of a tool result: a `tool-result` block inside a
+ * user-role message. dsh 0.2 replaced it with a first-class `tool`-role
+ * message, but a 0.1 host still sends this, so it is read structurally.
+ */
+interface LegacyToolResultBlock {
+  type: "tool-result";
+  toolCallId: string;
+  content: readonly ContentBlock[];
+  isError?: boolean;
+}
+
+function isLegacyToolResult(block: { type: string }): block is LegacyToolResultBlock {
+  return block.type === "tool-result";
 }
 
 async function userContent(
@@ -32,7 +48,18 @@ async function userContent(
         type: "text",
         text: fileHandleText(block.attachment, context.attachments?.fileHostPath(block.attachment)),
       });
-    } else if (block.type === "image" && context.attachments) {
+    } else if (block.type === "image") {
+      // An offloaded occurrence is a durable decision to send the placeholder
+      // naming the image and its read-only path instead of its bytes.
+      if (block.offloaded === true) {
+        const hostPath = context.attachments?.imageHostPath(block.attachment);
+        out.push({
+          type: "text",
+          text: offloadedImageText(block.attachment, hostPath ? { readonlyPath: hostPath } : undefined),
+        });
+        continue;
+      }
+      if (!context.attachments) continue;
       const stored = await context.attachments.readImage(block.attachment, context.signal);
       out.push({
         type: "image",
@@ -40,35 +67,39 @@ async function userContent(
         mimeType: block.attachment.mediaType,
       });
     }
+    // `tool-addition` / `tool-removal` belong to developer messages; this route
+    // declares no `toolUpdate`, so every request already carries the full tool list.
   }
   return out;
-}
-
-function isToolResult(block: ContentBlock): block is ToolResultBlock {
-  return block.type === "tool-result";
 }
 
 /**
  * Flatten one Harness history into the neutral shape.
  *
- * Two structural differences drive the whole mapping. The Harness has no
- * `toolResult` role — a result is a `tool-result` block inside a user message —
- * so those blocks are lifted into their own neutral messages. And its system
- * prompt travels as a `system`-role message rather than a request field, so
- * system text is returned separately for the caller to pass as the system slot.
+ * Tool results arrive as `tool`-role messages (dsh 0.2) or as `tool-result`
+ * blocks inside a user message (dsh 0.1); both become neutral `toolResult`
+ * messages. The system prompt travels as a `system`-role message rather than a
+ * request field, so its text is returned separately for the system slot.
+ * `developer` messages only record tool additions/removals, which this route
+ * does not read in-history (it declares no `toolUpdate`), so they are skipped.
  */
 export async function toDevinMessages(
-  messages: readonly Message[],
+  messages: readonly RequestMessage[],
   context: MessageProjectionContext = {},
 ): Promise<{ messages: DevinMessage[]; system?: string }> {
   const out: DevinMessage[] = [];
   const systemParts: string[] = [];
+  // The Harness correlates a result by call id alone; the call's name is only
+  // on the assistant block, so it is remembered here for the result.
+  const toolNames = new Map<string, string>();
 
   for (const message of messages) {
     if (message.role === "system") {
       for (const block of message.content) if (block.type === "text") systemParts.push(block.text);
       continue;
     }
+
+    if (message.role === "developer") continue;
 
     if (message.role === "assistant") {
       const content: DevinAssistantContent[] = [];
@@ -85,6 +116,7 @@ export async function toDevinMessages(
             // keeps the call/result pairing, which dropping would break.
             args = {};
           }
+          toolNames.set(block.id, block.name);
           content.push({ type: "toolCall", id: block.id, name: block.name, arguments: args });
         }
       }
@@ -92,16 +124,27 @@ export async function toDevinMessages(
       continue;
     }
 
-    const results = message.content.filter(isToolResult);
-    const plain = message.content.filter((block) => !isToolResult(block));
+    if (message.role === "tool") {
+      out.push({
+        role: "toolResult",
+        toolCallId: message.toolCallId,
+        toolName: toolNames.get(message.toolCallId) ?? "tool",
+        content: await userContent(message.content, context),
+        isError: message.isError === true,
+      });
+      continue;
+    }
+
+    // user (durable or request-only input)
+    const blocks = message.content as readonly (ContentBlock | LegacyToolResultBlock)[];
+    const results = blocks.filter(isLegacyToolResult);
+    const plain = blocks.filter((block): block is ContentBlock => !isLegacyToolResult(block));
     if (plain.length > 0) out.push({ role: "user", content: await userContent(plain, context) });
     for (const result of results) {
       out.push({
         role: "toolResult",
         toolCallId: result.toolCallId,
-        // The Harness correlates a result by id alone and carries no tool
-        // name on the block, so a placeholder is honest here.
-        toolName: "tool",
+        toolName: toolNames.get(result.toolCallId) ?? "tool",
         content: await userContent(result.content, context),
         isError: result.isError === true,
       });

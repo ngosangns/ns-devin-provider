@@ -238,7 +238,10 @@ export class DevinAdapter extends LlmAdapter {
               type: "tool-call",
               id: event.id as ToolCallId,
               name: event.name,
-              arguments: JSON.stringify(event.arguments),
+              // The Harness keeps the model's raw JSON and reports invalid
+              // arguments back to the model; re-serializing a parsed preview
+              // would run a truncated call with auto-closed arguments.
+              arguments: event.argumentsJson.trim() ? event.argumentsJson : "{}",
             },
           };
           break;

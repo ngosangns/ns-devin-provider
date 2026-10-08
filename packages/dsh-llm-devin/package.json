@@ -1,6 +1,6 @@
 {
   "name": "ns-dsh-llm-devin",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "DeepSeek Harness (dsh) LLM adapter adding Devin (Cognition Cascade) as a model provider",
   "type": "module",
   "main": "./dist/index.js",
@@ -44,9 +44,9 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.2",
-    "@deepseek-ai/dsh-attachment": ">=0.1.5-rc.1 <0.2.0",
-    "@deepseek-ai/dsh-credentials": ">=0.1.5-rc.1 <0.2.0",
-    "@deepseek-ai/dsh-llm": ">=0.1.5-rc.1 <0.2.0"
+    "@deepseek-ai/dsh-attachment": ">=0.1.5-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-credentials": ">=0.1.5-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-llm": ">=0.1.5-rc.1 <0.3.0"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-attachment": {
@@ -57,10 +57,10 @@
     }
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "4.0.2",
-    "@deepseek-ai/dsh-attachment": "0.1.5-rc.2",
-    "@deepseek-ai/dsh-credentials": "0.1.5-rc.2",
-    "@deepseek-ai/dsh-llm": "0.1.5-rc.2",
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/dsh-attachment": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-credentials": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-llm": "0.2.0-rc.2",
     "@types/node": "^22.20.4"
   }
 }
