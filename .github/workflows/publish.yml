@@ -1,11 +1,24 @@
 name: Publish
 
-# Publishes the packages to npm via trusted publishing (OIDC): no npm
-# token is stored anywhere, and no 2FA prompt blocks the run. npm verifies the
-# workflow identity instead, so the trusted publisher registered on npmjs.com
-# must name this repository AND this file (.github/workflows/publish.yml).
+# Publishes ns-devin-core and ns-dsh-llm-devin to npm with provenance. Two
+# auth modes:
+#
+# 1. npm trusted publishing (OIDC), preferred once registered on npmjs.com for
+#    BOTH packages, naming this repository and this file:
+#      npm trust github <pkg> --file publish.yml \
+#        --repo ngosangns/ns-devin-provider --allow-publish
+# 2. `NPM_TOKEN` repository secret: a granular npm token with package write +
+#    "bypass 2FA". setup-node writes an .npmrc that reads it from
+#    NODE_AUTH_TOKEN. npm >= 11.5 tries OIDC first and falls back to the
+#    token, so the secret can be deleted once trusted publishing works.
+#
+# pnpm packs (it rewrites `workspace:*` to the real version); npm publishes the
+# tarballs, core first so the adapter's dependency already exists.
 #
 # Trigger by pushing a tag that matches the version in package.json:
+#   git tag v0.2.0 && git push origin v0.2.0
+
+on:
 #   git tag v0.2.0 && git push origin v0.2.0
 
 on:
@@ -31,6 +44,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          registry-url: https://registry.npmjs.org
           cache: pnpm
 
       # Node 22 ships npm 10, which predates trusted publishing.
@@ -61,6 +75,25 @@ jobs:
           done
           echo "Tag $TAG matches all package versions"
 
-      - run: pnpm -r publish --access public --no-git-checks ${{ inputs.dry-run && '--dry-run' || '' }}
+      - name: Pack
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/tarballs"
+          pnpm -r pack --pack-destination "$GITHUB_WORKSPACE/tarballs"
+          ls -l tarballs
+
+      - name: Publish
+        run: |
+          if [ -n "$NODE_AUTH_TOKEN" ]; then
+            echo "auth: NPM_TOKEN secret present (OIDC still preferred if a trusted publisher is configured)"
+          else
+            echo "auth: no NPM_TOKEN secret, relying on npm trusted publishing (OIDC)"
+          fi
+          dry_run=""
+          if [ "${{ inputs.dry-run }}" = "true" ]; then dry_run="--dry-run"; fi
+          # `./` is load-bearing: a bare `tarballs/name.tgz` looks like owner/repo to npm.
+          for pkg in ns-devin-core ns-dsh-llm-devin; do
+            npm publish ./tarballs/$pkg-*.tgz --access public --provenance $dry_run
+          done
         env:
-          NODE_AUTH_TOKEN: ""
+          # Empty when the NPM_TOKEN secret is absent; npm then uses OIDC only.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
