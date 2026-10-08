@@ -19,9 +19,6 @@ name: Publish
 #   git tag v0.2.0 && git push origin v0.2.0
 
 on:
-#   git tag v0.2.0 && git push origin v0.2.0
-
-on:
   push:
     tags: ["v*"]
   workflow_dispatch:
