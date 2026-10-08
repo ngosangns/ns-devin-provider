@@ -1,6 +1,6 @@
 {
   "name": "ns-devin-core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Shared Devin (Cognition Cascade) protocol core — credentials, model discovery, Connect streaming; a dependency, not for direct install",
   "type": "module",
   "main": "./dist/index.js",
